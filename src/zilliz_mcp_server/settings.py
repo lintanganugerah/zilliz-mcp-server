@@ -34,12 +34,24 @@ class ZillizConfig:
         
         # Embedding configuration
         self.enable_auto_embedding: bool = os.getenv("ENABLE_AUTO_EMBEDDING", "false").lower() == "true"
+        self.embedding_method: str = os.getenv("EMBEDDING_METHOD", "remote").lower()  # remote or local
+        self.auto_fallback_to_local: bool = os.getenv("AUTO_FALLBACK_TO_LOCAL", "true").lower() == "true"
+        
+        # Remote embedding (OpenRouter)
         self.openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
         self.openrouter_embedding_model: str = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-large")
         try:
-            self.embedding_dimension: int = int(os.getenv("EMBEDDING_DIMENSION", "3072"))
+            self.remote_embedding_dimension: int = int(os.getenv("REMOTE_EMBEDDING_DIMENSION", "3072"))
         except ValueError:
-            raise ValueError("EMBEDDING_DIMENSION must be a valid integer")
+            raise ValueError("REMOTE_EMBEDDING_DIMENSION must be a valid integer")
+        
+        # Local embedding (FastEmbed)
+        self.local_embedding_model: str = os.getenv("LOCAL_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5")
+        try:
+            self.local_embedding_dimension: int = int(os.getenv("LOCAL_EMBEDDING_DIMENSION", "768"))
+        except ValueError:
+            raise ValueError("LOCAL_EMBEDDING_DIMENSION must be a valid integer")
+        self.fastembed_cache_dir: str = os.getenv("FASTEMBED_CACHE_DIR", "/Users/user/fastembed_cache")
         
         # Validate configuration
         self._validate_config()
@@ -61,10 +73,21 @@ class ZillizConfig:
         
         # Validate embedding configuration if auto-embedding is enabled
         if self.enable_auto_embedding:
-            if not self.openrouter_api_key or not self.openrouter_api_key.strip():
-                raise ValueError("OPENROUTER_API_KEY is required when ENABLE_AUTO_EMBEDDING is true")
-            if self.embedding_dimension <= 0:
-                raise ValueError("EMBEDDING_DIMENSION must be a positive integer")
+            # Validate embedding method
+            if self.embedding_method not in ["remote", "local"]:
+                raise ValueError("EMBEDDING_METHOD must be either 'remote' or 'local'")
+            
+            # Validate remote embedding config if using remote
+            if self.embedding_method == "remote":
+                if not self.openrouter_api_key or not self.openrouter_api_key.strip():
+                    if not self.auto_fallback_to_local:
+                        raise ValueError("OPENROUTER_API_KEY is required when EMBEDDING_METHOD is 'remote' and AUTO_FALLBACK_TO_LOCAL is false")
+                if self.remote_embedding_dimension <= 0:
+                    raise ValueError("REMOTE_EMBEDDING_DIMENSION must be a positive integer")
+            
+            # Validate local embedding config
+            if self.local_embedding_dimension <= 0:
+                raise ValueError("LOCAL_EMBEDDING_DIMENSION must be a positive integer")
 
 
 # Global config instance

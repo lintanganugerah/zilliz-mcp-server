@@ -815,3 +815,115 @@ async def hybrid_search(
 
 
 
+
+
+@zilliz_mcp.tool()
+async def switch_embedding_method(method: str) -> str:
+    """
+    Switch between remote (OpenRouter) and local (FastEmbed) embedding methods.
+    
+    This tool allows AI agents to automatically switch embedding methods if one fails,
+    enabling resilient operation without human intervention.
+    
+    Args:
+        method: Embedding method to use. Options: "remote" (OpenRouter) or "local" (FastEmbed)
+    
+    Returns:
+        Confirmation message with current method and dimension
+        
+    Example:
+        {
+            "message": "Embedding method switched from 'remote' to 'local'",
+            "current_method": "local",
+            "dimension": 768,
+            "model": "nomic-ai/nomic-embed-text-v1.5"
+        }
+    """
+    try:
+        logger.info(f"SWITCH_EMBEDDING_METHOD: Switching to {method}")
+        
+        # Get embedding client
+        embedding_client = get_embedding_client()
+        
+        # Switch method
+        result_message = embedding_client.switch_method(method)
+        
+        # Get current config
+        current_method = embedding_client.get_current_method()
+        dimension = embedding_client.get_dimension()
+        model = embedding_client.local_model if current_method == "local" else embedding_client.openrouter_model
+        
+        response = {
+            "message": result_message,
+            "current_method": current_method,
+            "dimension": dimension,
+            "model": model
+        }
+        
+        logger.info(f"SWITCH_EMBEDDING_METHOD RESULT: {response}")
+        return json.dumps(response)
+        
+    except Exception as e:
+        logger.error(f"SWITCH_EMBEDDING_METHOD ERROR: {str(e)}")
+        raise Exception(f"Failed to switch embedding method: {str(e)}") from e
+
+
+@zilliz_mcp.tool()
+async def get_embedding_status() -> str:
+    """
+    Get current embedding configuration and status.
+    
+    Returns information about the current embedding method, model, dimension,
+    and whether auto-fallback is enabled.
+    
+    Returns:
+        Dict containing embedding configuration status
+        
+    Example:
+        {
+            "auto_embedding_enabled": true,
+            "current_method": "remote",
+            "auto_fallback_enabled": true,
+            "remote": {
+                "model": "openai/text-embedding-3-large",
+                "dimension": 3072,
+                "api_key_configured": true
+            },
+            "local": {
+                "model": "nomic-ai/nomic-embed-text-v1.5",
+                "dimension": 768,
+                "cache_dir": "/Users/user/fastembed_cache"
+            }
+        }
+    """
+    try:
+        logger.info("GET_EMBEDDING_STATUS: Retrieving embedding configuration")
+        
+        # Get embedding client if auto-embedding is enabled
+        current_method = config.embedding_method
+        if config.enable_auto_embedding:
+            embedding_client = get_embedding_client()
+            current_method = embedding_client.get_current_method()
+        
+        response = {
+            "auto_embedding_enabled": config.enable_auto_embedding,
+            "current_method": current_method,
+            "auto_fallback_enabled": config.auto_fallback_to_local,
+            "remote": {
+                "model": config.openrouter_embedding_model,
+                "dimension": config.remote_embedding_dimension,
+                "api_key_configured": bool(config.openrouter_api_key)
+            },
+            "local": {
+                "model": config.local_embedding_model,
+                "dimension": config.local_embedding_dimension,
+                "cache_dir": config.fastembed_cache_dir
+            }
+        }
+        
+        logger.info(f"GET_EMBEDDING_STATUS RESULT: method={current_method}, auto_fallback={config.auto_fallback_to_local}")
+        return json.dumps(response)
+        
+    except Exception as e:
+        logger.error(f"GET_EMBEDDING_STATUS ERROR: {str(e)}")
+        raise Exception(f"Failed to get embedding status: {str(e)}") from e
