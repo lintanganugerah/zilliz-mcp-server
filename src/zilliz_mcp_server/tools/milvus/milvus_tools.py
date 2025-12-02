@@ -3,6 +3,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional, Union
 from zilliz_mcp_server.common import openapi_client
+from zilliz_mcp_server.common.embedding_client import get_embedding_client
 from zilliz_mcp_server.settings import config
 from zilliz_mcp_server.app import zilliz_mcp
 
@@ -307,12 +308,16 @@ async def insert_entities(
     """
     Insert data into a specific collection.
     
+    Auto-embedding: If ENABLE_AUTO_EMBEDDING is true and data contains 'content' field but no 'vector' field,
+    embeddings will be automatically generated using OpenRouter API.
+    
     Args:
         cluster_id: ID of the cluster
         region_id: ID of the cloud region hosting the cluster
         endpoint: The cluster endpoint URL. Can be obtained by calling describe_cluster and using the connect_address field
         collection_name: The name of an existing collection
-        data: An entity object or an array of entity objects. Note that the keys in an entity object should match the collection schema
+        data: An entity object or an array of entity objects. Note that the keys in an entity object should match the collection schema.
+              If auto-embedding is enabled, include 'content' field for automatic vector generation.
         db_name: The name of the target database. Pass explicit dbName or leave empty when cluster is free or serverless
     Returns:
         Dict containing the response with insert count and insert IDs
@@ -330,6 +335,43 @@ async def insert_entities(
         # Log request
         data_count = len(data) if isinstance(data, list) else 1
         logger.info(f"INSERT_ENTITIES: collection_name={collection_name}, data_count={data_count}, cluster_id={cluster_id}")
+        
+        # Auto-generate embeddings if enabled
+        if config.enable_auto_embedding:
+            logger.info("Auto-embedding is enabled, checking for content fields...")
+            
+            # Normalize data to list
+            data_list = data if isinstance(data, list) else [data]
+            
+            # Check which entities need embeddings
+            entities_needing_embeddings = []
+            for entity in data_list:
+                if 'content' in entity and 'vector' not in entity:
+                    entities_needing_embeddings.append(entity)
+            
+            if entities_needing_embeddings:
+                logger.info(f"Generating embeddings for {len(entities_needing_embeddings)} entities...")
+                
+                # Get embedding client
+                embedding_client = get_embedding_client()
+                
+                # Generate embeddings
+                if len(entities_needing_embeddings) == 1:
+                    # Single embedding
+                    content = entities_needing_embeddings[0]['content']
+                    embedding = embedding_client.generate_embedding(content)
+                    entities_needing_embeddings[0]['vector'] = embedding
+                else:
+                    # Batch embeddings
+                    contents = [entity['content'] for entity in entities_needing_embeddings]
+                    embeddings = embedding_client.generate_embeddings_batch(contents)
+                    for entity, embedding in zip(entities_needing_embeddings, embeddings):
+                        entity['vector'] = embedding
+                
+                logger.info(f"Successfully generated {len(entities_needing_embeddings)} embeddings")
+            
+            # Convert back to original format
+            data = data_list if isinstance(data, list) else data_list[0]
         
         # Build request body
         body = {
