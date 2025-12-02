@@ -292,3 +292,4 @@ site/
 
 # Claude Code files
 CLAUDE.md
+*.md
